@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="https://unpkg.com/axios@1.2.2/dist/axios.min.js"></script>
+    <style>
+
+    </style>
+</head>
+
+<body>
+    <input type="file" id="file" name="title" multiple />
+    <div>
+        <button id="info">输出文件对象</button>
+        <button id="upload">上 传</button>
+        <button id="abort">Abort</button>
+
+    </div>
+    <img id="img" />
+    <div id="progress" style="display:none;">
+    </div>
+
+    <div>
+        --------------分割线-------------
+    </div>
+    <div style="background-color: #00a2e9;width:200px;height:200px;" id="drop">
+        拖拽文件区域
+    </div>
+    <div id="dropImg"></div>
+    <button id="upload2">拖拽上传</button>
+
+    <div>
+        --------------分割线-------------
+    </div>
+
+    <div id="editor" style="border:1px solid #ccc;outline:none;width:400px;height:400px;" contenteditable="true">
+
+    </div>
+
+    <div>
+        --------------分割线-------------
+    </div>
+    <input type="file" id="bigFile" name="title" multiple />
+    <div>
+        <button id="bigUpload">大文件上传</button>
+    </div>
+
+    <script>
+        const controller = new AbortController();
+        const getEle = (element) => {
+            return document.querySelector(element)
+        }
+        const info = getEle('#info')
+        const upload = getEle('#upload')
+        const file = getEle('#file')
+        const progress = getEle('#progress')
+        const img = getEle('#img')
+        const drop = getEle('#drop')
+        const upload2 = getEle('#upload2')
+        const dropImg = getEle('#dropImg')
+        const bigFile = getEle('#bigFile')
+        const bigUpload = getEle('#bigUpload')
+
+
+        //编辑器粘贴
+        editor.addEventListener('paste', (e) => {
+            console.log(e.clipboardData.files)
+            let formData = new FormData()
+
+            Object.values(e.clipboardData.files).forEach(item => {
+                formData.append('f1', item)
+            })
+
+            axios({
+                url: 'http://localhost:3000/',
+                method: 'post',
+                data: formData,
+            }).then(res => {
+                const resAry = res.data.data
+                resAry.forEach(item => {
+                    const img = document.createElement('img')
+                    img.src = item
+
+                    var node = window.getSelection().anchorNode;
+                    if (node != null) {
+                        range = window.getSelection().getRangeAt(0);// 获取光标起始位置
+                        range.insertNode(img);// 在光标位置插入该对象
+                    } else {
+                        editor.append(img);
+                    }
+                })
+            })
+        })
+
+        //拖拽API
+        drop.addEventListener('dragover', (e) => {
+            console.log('drop dragover');
+            e.preventDefault()
+        })
+        drop.addEventListener('dragleave', (e) => {
+            console.log('drop dragleave');
+            e.preventDefault()
+        })
+        drop.addEventListener('drop', (e) => {
+            e.preventDefault()
+            //拿取文件对象走 上传文件逻辑即可
+            let formData = new FormData()
+
+            Object.values(e.dataTransfer.files).forEach(item => {
+                formData.append('f1', item)
+            })
+
+            axios({
+                url: 'http://localhost:3000/upload',
+                method: 'post',
+                data: formData,
+            }).then(res => {
+                const resAry = res.data.data
+                resAry.forEach(item => {
+                    const img = document.createElement('img')
+                    img.src = item
+
+                    dropImg.append(img)
+                })
+            })
+        })
+        //输出文件对象
+        info.addEventListener('click', () => {
+            console.log(file.files)
+        })
+        //取消上传
+        abort.addEventListener('click', () => {
+            controller.abort()
+        })
+        //文件预览
+        file.addEventListener('change', () => {
+            img.src = window.URL.createObjectURL(file.files[0])
+            img.onload = () => {
+                window.URL.revokeObjectURL(img.src)
+            }
+        })
+        //文件上传
+        upload.addEventListener('click', () => {
+            const formData = new FormData()
+            if (file.files.length > 0) {
+                Object.values(file.files).forEach((item) => {
+                    formData.append(`f1`, item)
+                })
+            }
+
+            axios({
+                url: 'http://localhost:3000/upload',
+                method: 'post',
+                data: formData,
+                signal: controller.signal,
+                //浏览器事件
+                onUploadProgress(progressEvent) {
+                    console.log(progressEvent)
+                    let percent = (event.loaded / event.total * 100).toFixed(2);
+                    progress.style.display = 'block'
+                    progress.style.backgroundColor = 'red'
+                    progress.style.width = `${percent}%`
+                    progress.innerHTML = `${percent}%`
+                    if (percent > 80) {
+                        progress.style.backgroundColor = 'green'
+                    }
+                }
+            }).then(res => {
+                console.log(res)
+            })
+
+        })
+
+        //大文件上传
+        bigUpload.addEventListener('click', () => {
+            const formData = new FormData()
+            if (file.files.length > 0) {
+                Object.values(file.files).forEach((item) => {
+                    formData.append(`f1`, item)
+                })
+            }
+
+            axios({
+                url: 'http://localhost:3000/upload',
+                method: 'post',
+                data: formData,
+                signal: controller.signal,
+                //浏览器事件
+                onUploadProgress(progressEvent) {
+                    console.log(progressEvent)
+                    let percent = (event.loaded / event.total * 100).toFixed(2);
+                    progress.style.display = 'block'
+                    progress.style.backgroundColor = 'red'
+                    progress.style.width = `${percent}%`
+                    progress.innerHTML = `${percent}%`
+                    if (percent > 80) {
+                        progress.style.backgroundColor = 'green'
+                    }
+                }
+            }).then(res => {
+                console.log(res)
+            })
+
+        })
+
+    </script>
+</body>
+
+</html>
