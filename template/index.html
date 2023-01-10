@@ -47,10 +47,87 @@
     <input type="file" id="bigFile" name="title" multiple />
     <div>
         <button id="bigUpload">大文件上传</button>
+        <span id="bigText"></span>
+    </div>
+
+    <div>
+        --------------分割线-------------
+    </div>
+    <input type="file" id="shakeFile" name="title" multiple />
+    <div>
+        <button id="shakeUpload">大文件断点上传</button>
+        <button id="shakeStop">暂停</button>
+        <span id="shakeText"></span>
     </div>
 
     <script>
-        const controller = new AbortController();
+        const harexsLimit = (maxCount) => {
+            let activeCount = 0
+            let waitTask = []
+
+            const execute = (asyncFn, ...args) => {
+                return new Promise((resolve, reject) => {
+                    const task = create(asyncFn, args, resolve, reject)
+                    if (activeCount >= maxCount) {
+                        waitTask.push(task)
+                    } else {
+                        task()
+                    }
+                })
+            }
+
+            const create = (asyncFn, args, resolve, reject) => {
+                return () => {
+                    asyncFn(...args).then(resolve).catch(reject).finally(() => {
+                        activeCount--
+                        if (waitTask.length) {
+                            waitTask.shift()()
+                        }
+                    })
+                    activeCount++
+                }
+            }
+
+            return execute
+        }
+
+
+        let limitP = harexsLimit(3)
+
+        function sleep(sec) {
+            return new Promise((resolve, reject) => {
+                setTimeout(() => {
+                    resolve()
+                    setTimeout(() => {
+                        console.log('并发限制为3')
+                    }, sec * 1000)
+                })
+            })
+        }
+
+        limitP(sleep, 1)
+        limitP(sleep, 1)
+        limitP(sleep, 3)
+        limitP(sleep, 1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        let controller = new AbortController();
         const getEle = (element) => {
             return document.querySelector(element)
         }
@@ -64,6 +141,9 @@
         const dropImg = getEle('#dropImg')
         const bigFile = getEle('#bigFile')
         const bigUpload = getEle('#bigUpload')
+        const shakeUpload = getEle('#shakeUpload')
+        const shakeStop = getEle('#shakeStop')
+        const shakeFile = getEle('#shakeFile')
 
 
         //编辑器粘贴
@@ -177,34 +257,156 @@
 
         //大文件上传
         bigUpload.addEventListener('click', () => {
-            const formData = new FormData()
-            if (file.files.length > 0) {
-                Object.values(file.files).forEach((item) => {
-                    formData.append(`f1`, item)
-                })
+            const chunkSize = 2 * 1024 * 1024
+            const file = bigFile.files[0]
+            let chunks = []
+            let token = +new Date()
+            let name = file.name
+            let chunkCount = 0
+            let sendChunkCount = 0
+
+            if (file.size > chunkSize) {
+                let start = 0
+                let end = 0
+                while (true) {
+                    end += chunkSize
+                    let blob = file.slice(start, end)
+                    start += chunkSize
+
+                    //截取数据为空 代码这个片段没东西了
+                    if (!blob.size) break;
+                    chunks.push(blob)
+                }
+            } else {
+                chunks.push(blob)
             }
 
-            axios({
-                url: 'http://localhost:3000/upload',
-                method: 'post',
-                data: formData,
-                signal: controller.signal,
-                //浏览器事件
-                onUploadProgress(progressEvent) {
-                    console.log(progressEvent)
-                    let percent = (event.loaded / event.total * 100).toFixed(2);
-                    progress.style.display = 'block'
-                    progress.style.backgroundColor = 'red'
-                    progress.style.width = `${percent}%`
-                    progress.innerHTML = `${percent}%`
-                    if (percent > 80) {
-                        progress.style.backgroundColor = 'green'
-                    }
-                }
-            }).then(res => {
-                console.log(res)
-            })
+            chunkCount = chunks.length
 
+            for (let i = 0; i < chunkCount; i++) {
+                let fd = new FormData()
+                fd.append('token', token)
+                fd.append('f1', chunks[i])
+                fd.append('index', i)
+                axios({
+                    url: 'http://localhost:3000/bigUpload',
+                    method: 'post',
+                    data: fd,
+                }).then(res => {
+                    sendChunkCount += 1
+                    //说明全部切片上传完成
+                    if (sendChunkCount === chunkCount) {
+                        let formD = new FormData()
+                        formD.append('type', 'merge')
+                        formD.append('token', token)
+                        formD.append('chunkCount', chunkCount)
+                        formD.append('filename', name)
+                        axios({
+                            url: 'http://localhost:3000/bigUpload',
+                            method: 'post',
+                            data: formD,
+                        }).then((res) => {
+                            getEle('#bigText').innerHTML = `总切片执行完成,${res.data.f1[0]}`
+                        })
+                    }
+                })
+            }
+        })
+
+
+        //大文件 断点上传
+        function getStorageChunk(token, index) {
+            const tokenObj = JSON.parse(localStorage.getItem(token)) || {}
+            return tokenObj[index]
+        }
+        function setStorageChunk(token, index) {
+            const tokenObj = JSON.parse(localStorage.getItem(token)) || {}
+            tokenObj[index] = true
+            localStorage.setItem(token, JSON.stringify(tokenObj))
+        }
+        function getSendChunk(token) {
+            const tokenObj = JSON.parse(localStorage.getItem(token)) || {}
+            return tokenObj['sendNum'] || 0
+        }
+        function setSendChunk(token) {
+            const tokenObj = JSON.parse(localStorage.getItem(token)) || {}
+            tokenObj['sendNum'] = tokenObj['sendNum'] ? tokenObj['sendNum'] + 1 : 1
+            localStorage.setItem(token, JSON.stringify(tokenObj))
+            return tokenObj['sendNum']
+        }
+
+        shakeStop.addEventListener('click', () => {
+            controller.abort()
+        })
+        shakeUpload.addEventListener('click', () => {
+            controller = new AbortController()
+
+            const chunkSize = 2 * 1024 * 1024
+            const file = shakeFile.files[0]
+            let chunks = []
+            let token = +new Date()
+            let name = file.name
+            let block = name.split('.')
+            let chunkCount = 0
+            let sendChunkCount = getSendChunk(token)
+
+            if (file.size > chunkSize) {
+                let start = 0
+                let end = 0
+                while (true) {
+                    end += chunkSize
+                    let blob = file.slice(start, end)
+                    start += chunkSize
+
+                    //截取数据为空 代码这个片段没东西了
+                    if (!blob.size) break;
+                    chunks.push(blob)
+                }
+            } else {
+                chunks.push(blob)
+            }
+
+            chunkCount = chunks.length
+
+
+
+            for (let i = 0; i < chunkCount; i++) {
+                //记录切片
+                if (getStorageChunk(name, i)) {
+                    continue
+                }
+
+                let fd = new FormData()
+                fd.append('token', block[0])
+                fd.append('f1', chunks[i])
+                fd.append('index', i)
+                axios({
+                    url: 'http://localhost:3000/bigUpload',
+                    method: 'post',
+                    data: fd,
+                    signal: controller.signal
+                }).then(res => {
+                    setStorageChunk(name, i)
+                    sendChunkCount = setSendChunk(name)
+                    //说明全部切片上传完成
+                    if (sendChunkCount === chunkCount) {
+                        let formD = new FormData()
+                        formD.append('type', 'merge')
+                        formD.append('token', block[0])
+                        formD.append('chunkCount', chunkCount)
+                        formD.append('filename', name)
+                        axios({
+                            url: 'http://localhost:3000/bigUpload',
+                            method: 'post',
+                            data: formD,
+                            signal: controller.signal
+                        }).then((res) => {
+                            localStorage.removeItem(name)
+                            getEle('#shakeText').innerHTML = `总切片执行完成,${res.data.f1[0]}`
+                        })
+                    }
+                })
+            }
         })
 
     </script>

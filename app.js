@@ -64,6 +64,61 @@ router.post('/upload', (ctx, next) => {
     }
 })
 
+
+router.post('/bigUpload', (ctx) => {
+    let body = ctx.request.body
+    let files = ctx.request.files ? ctx.request.files.f1 : []
+    let result = []
+    let fileToken = ctx.request.body.token
+    let fineIndex = ctx.request.body.index
+
+    if (files && !Array.isArray(files)) {//单文件上传容错
+        files = [files];
+    }
+
+    files && files.forEach(item => {
+        const filePath = item.filepath
+        const section = `${fileToken}-${fineIndex}`
+        fs.renameSync(filePath, path.resolve('./uploads', section));
+        result.push(`${uploadHost}${section}`)
+    })
+
+    if (body.type === 'merge') {
+        let token = body.token
+        let filename = +new Date() + '_' + body.filename
+        let chunkCount = body.chunkCount
+
+        let folder = path.resolve('./uploads')
+
+        let writeStream = fs.createWriteStream(path.join(folder, filename))
+        let cindex = 0
+
+        function fnMergeFile() {
+            let fname = path.resolve(folder, `${token}-${cindex}`)
+            let readStream = fs.createReadStream(fname)
+            readStream.pipe(writeStream, { end: false })
+            readStream.on('end', () => {
+                fs.unlink(fname, (err) => {
+                    if (err) {
+                        throw err
+                    }
+                })
+                if (cindex + 1 < chunkCount) {
+                    cindex += 1
+                    fnMergeFile()
+                }
+            })
+        }
+        fnMergeFile()
+        result.push(`${uploadHost}${filename}`)
+    }
+
+    ctx.body = {
+        f1: result
+    }
+})
+
+
 app.use(router.routes(), router.allowedMethods())
 
 app.listen(3000, () => {
