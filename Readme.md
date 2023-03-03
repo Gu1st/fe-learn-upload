@@ -5,6 +5,12 @@
 ### 运行项目
 
 > npm i 安装依赖
+
+
 > npm run start 运行服务端
+
+
 > cd ./template && http-server 运行客户端
+
+
 > 需要注意您需要手动安装 http-server,或者使用其他方式来调用客户端页面运行即可
